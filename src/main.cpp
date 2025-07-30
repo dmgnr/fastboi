@@ -1,5 +1,4 @@
 int jccount;
-#include <EEPROM.h>
 #include <MicroPOP32.cpp>
 #include <SharpIR.h>
 
@@ -21,15 +20,17 @@ struct Config
 {
   //   Developer setting   //
   bool EnableDebugging = true;
-  bool useNewFn = true;
   bool JunctionBeep = false;
   //       Settings        //
   short Speed = 68; // สปีด
   float Kp = 0.022; // ส่าย
   float Kd = 0.048; // แก้ส่าย
-  short turnN = -40;
+  float Kt = 1.0;   // delay ระหว่างการคำนวณ
+  short spinThreshold = -40;
+  short spinSpeed = -100;
   short slowSpeedRange = 31;
-  short autoTuneRate = 48;
+  short autoTuneRate = 333; // ms
+  short autoTuneLinear = 5;
   short SharpPin = PB0;
   short SharpModel = SharpIR::GP2Y0A41SK0F;
   short ObstacleRange = 4;
@@ -42,23 +43,23 @@ struct Config
 };
 int sensors[][6] = {
     //    Sensor configuration     // Pin:
-    {0, 705, 3790, -4, 2, 0},  // - Analog pin on your board(If it is A5 put "A5"
-    {1, 900, 3815, -3, 0, 0},  //     but if it is 17 put "17")
-    {2, 260, 2020, -2, 0, 0},  // - Recommended to be 0-7
-    {3, 1175, 3832, -1, 1, 0}, // Black:
-    {4, 614, 3721, 1, 1, 0},   // - Place your array of sensors on black line
-    {5, 1117, 3830, 2, 0, 0},  //     and record the value to that field
-    {6, 325, 2275, 3, 0, 0},   // White:
-    {7, 1205, 3838, 4, 2, 0},  // - Same like black, but put on white area
-                               //{I,BBBB,WWWW,±P,T,0}         // Priority:
-                               // │ │    │    │  │ │          // - How much that sensor values, used in calculation
-                               // │ │ ;_;│    │  │ [Internal] // - Recommended to be ...,-4,-3,-2,-1,-1,1,1,2,3,4,...
-                               // │ │    White│  Type         // Type:
-                               // │ Black     Priority        // - This is used in the line recovery process
-                               // Pin                         // - 1 for the center sensors
-                               //                             // - 2 for sensor at the edge of the sensor array
+    {0, 844, 2959, -4, 2, 0}, // - Analog pin on your board(If it is A5 put "A5"
+    {1, 606, 3072, -3, 0, 0}, //     but if it is 17 put "17")
+    {2, 511, 2507, -2, 0, 0}, // - Recommended to be 0-7
+    {3, 867, 3010, -1, 1, 0}, // Black:
+    {4, 772, 2277, 1, 1, 0},  // - Place your array of sensors on black line
+    {5, 918, 2717, 2, 0, 0},  //     and record the value to that field
+    {6, 527, 2215, 3, 0, 0},  // White:
+    {7, 751, 2822, 4, 2, 0},  // - Same like black, but put on white area
+                              //{I,BBBB,WWWW,±P,T,0}         // Priority:
+                              // │ │    │    │  │ │          // - How much that sensor values, used in calculation
+                              // │ │ ;_;│    │  │ [Internal] // - Recommended to be ...,-4,-3,-2,-1,-1,1,1,2,3,4,...
+                              // │ │    White│  Type         // Type:
+                              // │ Black     Priority        // - This is used in the line recovery process
+                              // Pin                         // - 1 for the center sensors
+                              //                             // - 2 for sensor at the edge of the sensor array
 }; // [Internal]: Memory for calculations
-Config config = {}; // /!\ DO NOT MODIFY AFTER THIS /!\ 
+Config config; // /!\ DO NOT MODIFY AFTER THIS /!\ 
 //      Junction check      //
 void junction_check()
 {
@@ -86,8 +87,15 @@ void junction_check()
 }
 int s(short pin) { return abs(map(a(sensors[pin][0]), sensors[pin][1], sensors[pin][2], 0, 100)); };
 bool d(short pin) { return s(pin) > 50; };
-void tune(unsigned short sen) { sensors[sen][d(sen) + 1] = (a(sensors[sen][0]) + (sensors[sen][d(sen) + 1] * 2)) / 3; };
-unsigned short sc = 0, lastLine, cycle;
+void tune(unsigned short sen)
+{
+  int k = d(sen);
+  int previous = sensors[sen][k + 1];
+  sensors[sen][(!k) + 1] += (previous - (sensors[sen][k + 1] = (a(sensors[sen][0]) + (previous * (config.autoTuneLinear - 1))) / config.autoTuneLinear)) / 2;
+};
+unsigned short sc = 0;
+uint32_t nextTune = 0;
+void Track(Config c);
 short lock;
 int all()
 {
@@ -101,10 +109,10 @@ int all()
 short line()
 {
   int line = 0;
-  cycle = cycle + config.autoTuneRate % 1000;
+  uint32_t m = millis();
   for (int i = 0; i < sc; i++)
   {
-    if (cycle < 1)
+    if (m > nextTune)
       tune(i);
     line += sensors[i][3] * (100 - s(i));
     if (sensors[i][4] == 2 && !d(i))
@@ -112,6 +120,8 @@ short line()
     else if (sensors[i][4] == 1 && !d(i))
       lock = 0;
   };
+  if (m > nextTune)
+    nextTune = nextTune + config.autoTuneRate;
   return line + lock;
 };
 void initLineCalc()
@@ -126,13 +136,14 @@ int leftmotor, rightmotor, error, last_error, Power_Motor, Position;
 unsigned long LastTime = 0;
 void setup()
 {
-  EEPROM.get(0x0100, config);
+  // EEPROM.get(0x0100, config);
   initLineCalc();
   Serial.begin(115200);
   sensorCount = sizeof(sensors) / sizeof(sensors[0]);
   Serial.print(sensorCount);
   if (ok() && config.EnableDebugging)
   {
+    beep(1000);
     while (1)
     {
       // for(int i=0;i<sc;i++) tune(i);
@@ -143,16 +154,23 @@ void setup()
         Serial.print(sensors[i][0]);
         Serial.print(F(" \t"));
       };
-      Serial.print(F("| IR: "));
-      Serial.print(obstacle.getDistance());
-      Serial.print(F("\nRaw: "));
+      Serial.printf(F("| IR: %d\tLock: %d\nRef: "), obstacle.getDistance(), lock);
+      for (int i = 0; i < sizeof(sensors) / sizeof(sensors[0]); i++)
+      {
+        Serial.print(sensors[i][2] - sensors[i][1]);
+        Serial.print(F("\t"));
+      };
+      int timestart = micros();
+      int li = line();
+      int timeend = micros();
+      Serial.printf(F("| ILatency: %dus (C: %d)\nRaw: "), timeend - timestart, nextTune);
       for (int i = 0; i < sizeof(sensors) / sizeof(sensors[0]); i++)
       {
         Serial.print(a(sensors[i][0]));
         Serial.print(F("\t"));
       };
       // Serial.print(F("| Line:"));
-      Serial.printf(F("| Line: | Lock: %d\nOut: "), lock);
+      Serial.printf(F("|\nOut: "));
       // Serial.print(F("\nOut: "));
       for (int i = 0; i < sizeof(sensors) / sizeof(sensors[0]); i++)
       {
@@ -160,14 +178,7 @@ void setup()
         Serial.print(s(i));
         Serial.print(F("\t"));
       };
-      Serial.print(F("| "));
-      int timestart = micros();
-      int li = line();
-      int timeend = micros();
-      Serial.print(li);
-      Serial.print(F("\tline() latency : "));
-      Serial.print(timeend - timestart);
-      Serial.print(F("us"));
+      Serial.printf(F("| Line: %d\tAvg: %d"), li, all());
       delay(100);
     }
   }
@@ -185,60 +196,18 @@ void loop()
   if (config.JunctionBeep)
     beep();
 }
-void TrackNoLoop(Config c, int duration)
+void Track(Config c, int duration)
 {
-  int lin = line(), PreError, Out;
-  if (c.useNewFn)
-  {
-    PidTimer(c.Speed, c.Kp, c.Kd, duration, c.turnN, c.slowSpeedRange);
-    return;
-  }
-  else
-    while (!(abs(lin) < 30 && s(0) < 20 && s(0) < 20) && !c.useNewFn)
-    {
-      lin = line();
-      Out = (c.Kp * lin) + (c.Kd * PreError);
-      PreError = lin;
-      motor(c.Speed + Out, c.Speed - Out);
-    }
-  delay(100);
+  PidTimer(c.Speed, c.Kp, c.Kd, duration, c.spinThreshold, c.slowSpeedRange);
 }
 void Track()
 {
-  int lin = line(), PreError, Out;
-  if (config.useNewFn)
-  {
-    while (!(/*abs(lin)<30&&*/ s(sensorCount) < 20 && s(0) < 20))
-      PidTimer(config.Speed, config.Kp, config.Kd, 1, config.turnN, config.slowSpeedRange);
-    return;
-  }
-  else
-    while (!(abs(lin) < 30 && s(sensorCount) < 20 && s(0) < 20) && !config.useNewFn)
-    {
-      lin = line();
-      Out = (config.Kp * lin) + (config.Kd * PreError);
-      PreError = lin;
-      motor(config.Speed + Out, config.Speed - Out);
-    }
+  Track(config);
 }
 void Track(Config c)
 {
-  int lin = line(), PreError, Out;
-  if (c.useNewFn)
-  {
-    while (!(/*abs(lin)<30&&*/ s(sensorCount) < 20 && s(0) < 20))
-      PidTimer(c.Speed, c.Kp, c.Kd, 1, c.turnN, c.slowSpeedRange);
-    return;
-  }
-  else
-    while (!(abs(lin) < 30 && s(0) < 20 && s(0) < 20) && !c.useNewFn)
-    {
-      lin = line();
-      Out = (c.Kp * lin) + (c.Kd * PreError);
-      PreError = lin;
-      motor(c.Speed + Out, c.Speed - Out);
-    }
-  delay(100);
+  while (!(/*abs(lin)<30&&*/ s(sensorCount) < 20 && s(0) < 20))
+    Track(c, 1);
 }
 //* //wip
 void turnLeft()
