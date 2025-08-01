@@ -1,284 +1,179 @@
+asm(".global _printf_float");
+
 int jccount;
 #include <MicroPOP32.cpp>
-#include <SharpIR.h>
+#include <./Logger.cpp>
+#include <QuickPID.h>
 
-short line(); // Forward declaration of line() function
-void Track();
-void PidTimer(int BaseSpeed, float Kp, float Kd, int Timer, int turnN, int slowSpeedRange);
+#define VOLTMETER_PIN PB0
+#define SPEED 80
+#define KP 1.0
+#define KI 0.1
+#define KD 0.5
 
-/* UNILINE 2.2.0 by @superdinmc
- * Universal smart line robot firmware
- * New: Now with junction checking
- *
- * Customizable easy to use line tracking robot firmware
- * Compatible with both POP32 and ATX2
- * Installation:
- * Install SharpIR library(recommended 2.0.x)
- * Configure the bahavior below, all documented
- */
-struct Config
-{
-  //   Developer setting   //
-  bool EnableDebugging = true;
-  bool JunctionBeep = false;
-  //       Settings        //
-  short Speed = 68; // สปีด
-  float Kp = 0.022; // ส่าย
-  float Kd = 0.048; // แก้ส่าย
-  float Kt = 1.0;   // delay ระหว่างการคำนวณ
-  short spinThreshold = -40;
-  short spinSpeed = -100;
-  short slowSpeedRange = 31;
-  short autoTuneRate = 333; // ms
-  short autoTuneLinear = 5;
-  short SharpPin = PB0;
-  short SharpModel = SharpIR::GP2Y0A41SK0F;
-  short ObstacleRange = 4;
-  //     Quick manual      //
-  // Speed: Speed bruh | Kp: Porpotional gain | Kd: Derilitive gain
-  // turnN: (motorout<turnN)&&-90 | slowSpeedRange: Limit of "Slow on turn" feature
-  // SharpPin: the pin of sharp obstacle sensor | SharpModel: See SharpIR docs
-  // ObstacleRange: if distance less than this then avoid
-  // Don't forget ;     ;-; //
-};
-int sensors[][6] = {
-    //    Sensor configuration     // Pin:
-    {0, 844, 2959, -4, 2, 0}, // - Analog pin on your board(If it is A5 put "A5"
-    {1, 606, 3072, -3, 0, 0}, //     but if it is 17 put "17")
-    {2, 511, 2507, -2, 0, 0}, // - Recommended to be 0-7
-    {3, 867, 3010, -1, 1, 0}, // Black:
-    {4, 772, 2277, 1, 1, 0},  // - Place your array of sensors on black line
-    {5, 918, 2717, 2, 0, 0},  //     and record the value to that field
-    {6, 527, 2215, 3, 0, 0},  // White:
-    {7, 751, 2822, 4, 2, 0},  // - Same like black, but put on white area
-                              //{I,BBBB,WWWW,±P,T,0}         // Priority:
-                              // │ │    │    │  │ │          // - How much that sensor values, used in calculation
-                              // │ │ ;_;│    │  │ [Internal] // - Recommended to be ...,-4,-3,-2,-1,-1,1,1,2,3,4,...
-                              // │ │    White│  Type         // Type:
-                              // │ Black     Priority        // - This is used in the line recovery process
-                              // Pin                         // - 1 for the center sensors
-                              //                             // - 2 for sensor at the edge of the sensor array
-}; // [Internal]: Memory for calculations
-Config config; // /!\ DO NOT MODIFY AFTER THIS /!\ 
-//      Junction check      //
-void junction_check()
-{
-  int lin = line(), timer;
-  int sensorCount = sizeof(sensors) / sizeof(sensors[0]); /*
-       if(s(sensorCount)<20&&s(0)<20) {
-         timer = millis();
-         while(s(sensorCount)<20&&s(0)<20) Track();
-         int totaltime=millis()-timer;
-         Serial.println(totaltime);
-         if(totaltime<1000&&totaltime>10) turnLeft();
-         };*/
-  switch (jccount)
-  {
-    /*case 0:
-      while(abs(lin)<30&&s(sensorCount)<20&&s(0)<20) Track();
-      break;*/
-    /*case 1:
-      turnLeft();
-      break;*/
-    /*case 2:
-      while(abs(lin)<30&&s(sensorCount)<20&&s(0)<20) Track();
-      break;*/
-  }
-}
-int s(short pin) { return abs(map(a(sensors[pin][0]), sensors[pin][1], sensors[pin][2], 0, 100)); };
-bool d(short pin) { return s(pin) > 50; };
-void tune(unsigned short sen)
-{
-  int k = d(sen);
-  int previous = sensors[sen][k + 1];
-  sensors[sen][(!k) + 1] += (previous - (sensors[sen][k + 1] = (a(sensors[sen][0]) + (previous * (config.autoTuneLinear - 1))) / config.autoTuneLinear)) / 2;
-};
-unsigned short sc = 0;
-uint32_t nextTune = 0;
-void Track(Config c);
-short lock;
-int all()
-{
-  unsigned int r = 0;
-  for (int i = 0; i < sc; i++)
-  {
-    r += s(i);
-  };
-  return r / sc;
-};
-short line()
-{
-  int line = 0;
-  uint32_t m = millis();
-  for (int i = 0; i < sc; i++)
-  {
-    if (m > nextTune)
-      tune(i);
-    line += sensors[i][3] * (100 - s(i));
-    if (sensors[i][4] == 2 && !d(i))
-      lock = sensors[i][3] * 100;
-    else if (sensors[i][4] == 1 && !d(i))
-      lock = 0;
-  };
-  if (m > nextTune)
-    nextTune = nextTune + config.autoTuneRate;
-  return line + lock;
-};
-void initLineCalc()
-{
-  sc = sizeof(sensors) / sizeof(sensors[0]);
-  for (int i = 0; i < sc; i++)
-    sensors[i][5] = (sensors[i][1] + sensors[i][2]) / 2;
-}
-SharpIR obstacle(config.SharpModel, config.SharpPin);
-short sensorCount;
-int leftmotor, rightmotor, error, last_error, Power_Motor, Position;
-unsigned long LastTime = 0;
-void setup()
-{
-  // EEPROM.get(0x0100, config);
-  initLineCalc();
-  Serial.begin(115200);
-  sensorCount = sizeof(sensors) / sizeof(sensors[0]);
-  Serial.print(sensorCount);
-  if (ok() && config.EnableDebugging)
-  {
-    beep(1000);
-    while (1)
-    {
-      // for(int i=0;i<sc;i++) tune(i);
-      Serial.print(F("\nSen: "));
-      for (int i = 0; i < sizeof(sensors) / sizeof(sensors[0]); i++)
-      {
-        Serial.print(F("A"));
-        Serial.print(sensors[i][0]);
-        Serial.print(F(" \t"));
-      };
-      Serial.printf(F("| IR: %d\tLock: %d\nRef: "), obstacle.getDistance(), lock);
-      for (int i = 0; i < sizeof(sensors) / sizeof(sensors[0]); i++)
-      {
-        Serial.print(sensors[i][2] - sensors[i][1]);
-        Serial.print(F("\t"));
-      };
-      int timestart = micros();
-      int li = line();
-      int timeend = micros();
-      Serial.printf(F("| ILatency: %dus (C: %d)\nRaw: "), timeend - timestart, nextTune);
-      for (int i = 0; i < sizeof(sensors) / sizeof(sensors[0]); i++)
-      {
-        Serial.print(a(sensors[i][0]));
-        Serial.print(F("\t"));
-      };
-      // Serial.print(F("| Line:"));
-      Serial.printf(F("|\nOut: "));
-      // Serial.print(F("\nOut: "));
-      for (int i = 0; i < sizeof(sensors) / sizeof(sensors[0]); i++)
-      {
-        Serial.print(F(" "));
-        Serial.print(s(i));
-        Serial.print(F("\t"));
-      };
-      Serial.printf(F("| Line: %d\tAvg: %d"), li, all());
-      delay(100);
+SensorStripLogger sensorLogger;
+
+float input, output, setpoint = 7, leftmotor, rightmotor;
+QuickPID pid = QuickPID(&input, &output, &setpoint, KP, KI, KD, QuickPID::Action::reverse);
+
+class Sensor {
+    short pin;
+    short value;
+    short ref;
+
+    long cacheTime = 0;
+    short upperRef = 0;
+    short lowerRef = 0;
+
+    void setRef() {
+        if(upperRef == 0 || lowerRef == 0) return; // No reference set
+        ref = (upperRef + lowerRef) / 2;
     }
-  }
-  while (!ok())
-    ;
-  beep();
-  delay(500);
+    void store() {
+        if (micros() < cacheTime) return; // Avoid reading too frequently
+        value = a(pin);
+        cacheTime = micros() + 200;
+    }
+
+public:
+    Sensor(short p, short ref) : pin(p), value(0), ref(ref) {
+        store();
+    }
+    short get() {
+        store();
+        return value;
+    }
+    bool on() {
+        return value > ref; // Threshold for "on" state
+    }
+    void setUpperRef(short upper) {
+        upperRef = upper;
+        setRef();
+    }
+    void setLowerRef(short lower) {
+        lowerRef = lower;
+        setRef();
+    }
+};
+
+short voltage()
+{
+    return a(VOLTMETER_PIN) / 2.5;
 }
 
-void loop()
-{
-  junction_check();
-  Track();
-  jccount++;
-  if (config.JunctionBeep)
+Sensor sensors[] = {
+    Sensor(A0, 2750),
+    Sensor(A1, 2874),
+    Sensor(A2, 2245),
+    Sensor(A3, 2996),
+    Sensor(A4, 2146),
+    Sensor(A5, 3036),
+    Sensor(A6, 2559),
+    Sensor(A7, 3047)
+};
+
+const int sensorCount = sizeof(sensors) / sizeof(Sensor);
+
+float line() {
+    bool s0 = sensors[0].on(), s1 = sensors[1].on(), s2 = sensors[2].on(), s3 = sensors[3].on(), s4 = sensors[4].on(), s5 = sensors[5].on(), s6 = sensors[6].on(), s7 = sensors[7].on();
+    if(false);
+    else if(!s0 &&  s1 &&  s2 &&  s3 &&  s4 &&  s5 &&  s6 &&  s7) input =   0;
+    else if(!s0 && !s1 &&  s2 &&  s3 &&  s4 &&  s5 &&  s6 &&  s7) input =   1;
+    else if( s0 && !s1 &&  s2 &&  s3 &&  s4 &&  s5 &&  s6 &&  s7) input =   2;
+    else if( s0 && !s1 && !s2 &&  s3 &&  s4 &&  s5 &&  s6 &&  s7) input =   3;
+    else if( s0 &&  s1 && !s2 &&  s3 &&  s4 &&  s5 &&  s6 &&  s7) input =   4;
+    else if( s0 &&  s1 && !s2 && !s3 &&  s4 &&  s5 &&  s6 &&  s7) input =   5;
+    else if( s0 &&  s1 &&  s2 && !s3 &&  s4 &&  s5 &&  s6 &&  s7) input =   6;
+    else if( s0 &&  s1 &&  s2 && !s3 && !s4 &&  s5 &&  s6 &&  s7) input =   7;
+    else if( s0 &&  s1 &&  s2 &&  s3 && !s4 &&  s5 &&  s6 &&  s7) input =   8;
+    else if( s0 &&  s1 &&  s2 &&  s3 && !s4 && !s5 &&  s6 &&  s7) input =   9;
+    else if( s0	&&  s1 &&  s2 &&  s3 &&  s4	&& !s5 &&  s6 &&  s7) input =  10;
+    else if( s0	&&  s1 &&  s2 &&  s3 &&  s4	&& !s5 && !s6 &&  s7) input =  11;
+    else if( s0	&&  s1 &&  s2 &&  s3 &&  s4	&&  s5 && !s6 &&  s7) input =  12;
+    else if( s0	&&  s1 &&  s2 &&  s3 &&  s4	&&  s5 && !s6 && !s7) input =  13;
+    else if( s0	&&  s1 &&  s2 &&  s3 &&  s4	&&  s5 &&  s6 && !s7) input =  14;
+    else if(!s0	&& !s1 && !s2 && !s3 && !s4	&& !s5 && !s6 && !s7) input = 101;
+    // Last known position = don't set anything
+    return input;
+}
+
+void Track(int time) {
+    const int end = millis() + time;
+    while (millis() < end) {
+        line();
+        // Straight on junction
+        if(input == 101) {
+            motor(SPEED);
+            continue;
+        }
+        pid.Compute();
+        // Use the PID output to control the motors
+        leftmotor = SPEED + output;  // Adjust left motor speed
+        rightmotor = SPEED - output; // Adjust right motor speed
+        motor(leftmotor, rightmotor);
+    }
+}
+
+void setup() {
+    Serial.begin(115200);
+    pid.SetMode(QuickPID::Control::automatic);
+    pid.SetSampleTimeUs(20000); // Set sample time to 20ms
+    pid.SetOutputLimits(-SPEED, SPEED); // Set output limits to motor speed range
+    if(sw_A()) {
+        beep(1000);
+        while(sw_A())
+            ;
+        while (!sw_A())
+        {
+            if(ok()) {
+                short sensorVals[sensorCount];
+                for (int i = 0; i < sensorCount; i++) {
+                    sensorVals[i] = a(i);
+                }
+                sensorLogger.log(sensorVals);
+                beep(100);
+                while(ok())
+                    ;
+            }
+        }
+        while(ok());
+        beep(500);
+        while (1)
+        {
+            while (!ok())
+                delay(20);
+            beep();
+            Serial.print("\u001bcSensor Dump:\n\n");
+            sensorLogger.dump();
+            while (ok())
+                delay(20);
+        }
+    }
+    if (ok())
+    {
+        beep(200);
+        delay(100);
+        beep(200);
+        while (1)
+        {
+            line();
+            if(input != 101) pid.Compute();
+            Serial.printf("\u001bcPow: %.2fcV\tLine: %d\nOut: %.2f\n\u001b[36mPin\tRaw\tStt\u001b[0m", voltage()/100.0, (int)input, output);
+            for (int i = 0; i < sensorCount; i++)
+            {
+                Serial.printf("\nA\u001b[33m%d\u001b[0m\t%d\t%s", i, sensors[i].get(), sensors[i].on()?"ON":"\u001b[2mOFF\u001b[22m");
+            }
+            delayMicroseconds(33333); // 30 FPS
+        }
+    }
     beep();
+    while(!ok());
+    beep();
+    while (ok());
+    delay(1000);
+    Track(2000);
+    motor(0, 0);
 }
-void Track(Config c, int duration)
-{
-  PidTimer(c.Speed, c.Kp, c.Kd, duration, c.spinThreshold, c.slowSpeedRange);
-}
-void Track()
-{
-  Track(config);
-}
-void Track(Config c)
-{
-  while (!(/*abs(lin)<30&&*/ s(sensorCount) < 20 && s(0) < 20))
-    Track(c, 1);
-}
-//* //wip
-void turnLeft()
-{
-  motor(-30, 30);
-  while (line() > 20)
-    ;
-  motor(-20, 20);
-  while (line() < 200)
-    ;
-} //*/
-/**
- * @brief Backend of Track(), taken from romania line tracking code.
- *
- * @param BaseSpeed Base speed for the track
- * @param Kp P setting
- * @param Kd D setting
- * @param Timer milliseconds tracking loop time
- * @param turnN if PID return less than this, set that motor to -90 instead
- * @param slowSpeedRange Range of speed slow-on-curves feature
- */
-void PidTimer(int BaseSpeed, float Kp, float Kd, int Timer, int turnN, int slowSpeedRange)
-{
-  LastTime = millis();
-  int StartSpeed = BaseSpeed;
-  while ((millis() - LastTime) <= Timer)
-  {
-    // Filter.Filter(qtrrc.readLine(sensorValues, QTR_EMITTERS_ON, 0, 0, 120, 50 ));
-    // Position = Filter.Current();
-    Position = line() * 7;
-    if (!d(0) && !d(7))
-      motor(BaseSpeed);
-    // if (sensorValue[3] < 600 && sensorValue[4] < 600) if (sensorValues[0] < 600 && sensorValues[1] < 600 && sensorValues[2] < 600 && sensorValues[5] < 600 && sensorValues[6] < 600 && sensorValues[7] < 600) motorControl(100,100);
-    error = Position /* - 3500*/;
-    /* Remove first slash to mark as comment | Use //* to not mark as comment
-    if (obstacle.getDistance(false) < config.ObstacleRange) {
-      motor(-25.5,-25.5);
-      delay(10);
-      motor(0,0);
-      delay(190);
-      motor(-153,153);
-      delay(70);
-      motor(25.5,-25.5);
-      delay(10);
-      motor(0,0);
-      delay(290);
-      motor(130,65);
-      while(error < 1500) {
-        error = line()*7;
-      }
-      motor(0,0);
-      delay(200);
-    }//*/
-    Power_Motor = (Kp * error) + (Kd * (error - last_error));
-    last_error = error;
-    BaseSpeed = StartSpeed - abs((int)error) / (3500 / slowSpeedRange); // number at 176:48 = 3500 divided by maximum number of auto slow on curve
-    //* Remove first slash to mark as comment | Use //* to not mark as comment
-    if (Power_Motor > BaseSpeed)
-      Power_Motor = BaseSpeed;
-    if (Power_Motor < -BaseSpeed)
-      Power_Motor = -BaseSpeed;
-    leftmotor = BaseSpeed + Power_Motor;
-    rightmotor = BaseSpeed - Power_Motor;
-    if (leftmotor >= 255)
-      leftmotor = 255;
-    if (leftmotor <= turnN)
-      leftmotor = -30;
-    if (rightmotor >= 255)
-      rightmotor = 255;
-    if (rightmotor <= turnN)
-      rightmotor = -30;
-    motor(leftmotor, rightmotor);
-  }
+
+void loop() {
 }
