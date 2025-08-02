@@ -242,6 +242,8 @@ void setup() {
     // }
     Track();
     //  tune();
+    motor(SPEED, SPEED);
+    delay(50);
     motor(0, 0);
     while (ok())
         ;
