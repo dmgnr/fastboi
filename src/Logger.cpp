@@ -9,8 +9,6 @@ class PIDLogger
     struct Entry
     {
         short line;
-        short p;
-        short d;
         short output;
         short left;
         short right;
@@ -23,14 +21,14 @@ class PIDLogger
 
 public:
     // Returns true if logged, false if rate-limited
-    bool log(short line, short p, short d, short output, short left, short right)
+    bool log(short line, short output, short left, short right)
     {
         uint32_t now = millis();
         if (now - lastLogTime < RATE_LIMIT_MS)
             return false;
         lastLogTime = now;
 
-        buffer[index++] = {line, p, d, output, left, right};
+        buffer[index++] = {line, output, left, right};
         if (index >= MAX_ENTRIES)
         {
             index = 0;
@@ -49,7 +47,7 @@ public:
             size_t idx = (start + i) % MAX_ENTRIES;
             const Entry &e = buffer[idx];
 
-            out.printf(">line:%d\n>p:%d\n>d:%d\n>output:%d\n>left:%d\n>right:%d\n", e.line, e.p, e.d, e.output, e.left, e.right);
+            out.printf(">line:%d\n>output:%d\n>left:%d\n>right:%d\n", e.line, e.output, e.left, e.right);
             delay(20);
         }
     }
