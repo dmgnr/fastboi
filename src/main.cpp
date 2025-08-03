@@ -114,7 +114,7 @@ float line() {
 
 void Track() {
     float scale = 1;
-    int le = 0;
+    float le = 0;
     long jctime = 0;
     short jc = 0;
     // 1, 2 = start
@@ -147,7 +147,7 @@ void Track() {
         pid.Compute();
         if(nextscale > scale) scale+=0.01;
         else if(nextscale < scale-0.05) scale -= 0.05;
-        le = input;
+        le = (le * 9 + input) / 10.0;
         // Use the PID output to control the motors
         leftmotor = (SPEED + output) * scale;
         rightmotor = (SPEED - output) * scale * 0.93;

@@ -1,4 +1,3 @@
-#pragma once
 #include <Arduino.h>
 
 class PIDLogger
@@ -49,7 +48,7 @@ public:
             const Entry &e = buffer[idx];
 
             out.printf(">line:%d\n>output:%d\n>scale:%d\n>left:%d\n>right:%d\n", e.line, e.output, e.scale, e.left, e.right);
-            delay(5);
+            delay(20);
         }
     }
 
