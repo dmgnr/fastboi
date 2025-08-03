@@ -86,6 +86,7 @@ Sensor sensors[] = {
 
 const int sensorCount = sizeof(sensors) / sizeof(Sensor);
 
+// Temporary solution
 float line() {
     bool s0 = sensors[0].on(), s1 = sensors[1].on(), s2 = sensors[2].on(), s3 = sensors[3].on(), s4 = sensors[4].on(), s5 = sensors[5].on(), s6 = sensors[6].on(), s7 = sensors[7].on();
     if (false);
@@ -149,7 +150,7 @@ void Track() {
         le = input;
         // Use the PID output to control the motors
         leftmotor = (SPEED + output) * scale;
-        rightmotor = (SPEED - output) * scale * 0.95;
+        rightmotor = (SPEED - output) * scale * 0.93;
         motor(leftmotor, rightmotor);
         logger.log(input, output, scale, leftmotor, rightmotor);
         delayMicroseconds(next - micros());
