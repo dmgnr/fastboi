@@ -18,7 +18,7 @@ PIDLogger logger;
 #define KP 6.5
 #define KI 0.02
 #define KD 0.25
-#define VOLT_BASELINE 470
+#define VOLT_BASELINE 762
 
 SensorStripLogger sensorLogger;
 
@@ -126,7 +126,7 @@ void Track() {
         long next = micros() + 10000;
         line();
         // Scale output based on change in error(Kd)
-        float nextscale = min(1.0, 1.2 - abs(le - input) / 14.0) / (voltage() / VOLT_BASELINE); // 14 is the max error
+        float nextscale = min(1.0, 1.2 - abs(le - input) / 14.0) / max((double)voltage() / VOLT_BASELINE, 0.1); // 14 is the max error
         // Straight on junction
         if(input > 100) {
             input = input == 101
@@ -151,7 +151,7 @@ void Track() {
         leftmotor = (SPEED + output) * scale;
         rightmotor = (SPEED - output) * scale * 0.95;
         motor(leftmotor, rightmotor);
-        logger.log(input, output, leftmotor, rightmotor);
+        logger.log(input, output, scale, leftmotor, rightmotor);
         delayMicroseconds(next - micros());
     }
 }

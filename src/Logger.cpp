@@ -3,13 +3,14 @@
 
 class PIDLogger
 {
-    static const size_t MAX_ENTRIES = 500;
+    static const size_t MAX_ENTRIES = 1300;
     static const uint32_t RATE_LIMIT_MS = 20;
 
     struct Entry
     {
         short line;
         short output;
+        short scale;
         short left;
         short right;
     };
@@ -21,14 +22,14 @@ class PIDLogger
 
 public:
     // Returns true if logged, false if rate-limited
-    bool log(short line, short output, short left, short right)
+    bool log(short line, short output, float scale, short left, short right)
     {
         uint32_t now = millis();
         if (now - lastLogTime < RATE_LIMIT_MS)
             return false;
         lastLogTime = now;
 
-        buffer[index++] = {line, output, left, right};
+        buffer[index++] = {line, output, scale: (short)(scale * 100.0), left, right};
         if (index >= MAX_ENTRIES)
         {
             index = 0;
@@ -47,8 +48,8 @@ public:
             size_t idx = (start + i) % MAX_ENTRIES;
             const Entry &e = buffer[idx];
 
-            out.printf(">line:%d\n>output:%d\n>left:%d\n>right:%d\n", e.line, e.output, e.left, e.right);
-            delay(20);
+            out.printf(">line:%d\n>output:%d\n>scale:%d\n>left:%d\n>right:%d\n", e.line, e.output, e.scale, e.left, e.right);
+            delay(5);
         }
     }
 
