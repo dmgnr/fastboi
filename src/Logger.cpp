@@ -1,8 +1,11 @@
 #include <Arduino.h>
+#include <stdlib.h>
+#include <vector>
+using namespace std;
 
 class PIDLogger
 {
-    static const size_t MAX_ENTRIES = 1300;
+    static const size_t MAX_ENTRIES = 500;
     static const uint32_t RATE_LIMIT_MS = 20;
 
     struct Entry
@@ -62,31 +65,23 @@ public:
 
 class SensorStripLogger
 {
-    static const size_t MAX_ENTRIES = 20;
-    static const uint32_t RATE_LIMIT_MS = 0;
-    static const size_t SENSOR_COUNT = 8;
+    size_t MAX_ENTRIES = 20;
+    size_t SENSOR_COUNT = 8;
+    vector<vector<short>> buffer;
 
-    struct Entry
-    {
-        short sensor[SENSOR_COUNT];
-    };
-
-    Entry buffer[MAX_ENTRIES];
     size_t index = 0;
     bool wrapped = false;
-    uint32_t lastLogTime = 0;
 
 public:
-    // Log all sensor values at once
-    bool log(const short sensorVals[SENSOR_COUNT])
-    {
-        uint32_t now = millis();
-        if (now - lastLogTime < RATE_LIMIT_MS)
-            return false;
-        lastLogTime = now;
+    SensorStripLogger(size_t sensors, size_t entries = 20): MAX_ENTRIES(entries), SENSOR_COUNT(sensors) {
+        buffer.resize(MAX_ENTRIES, vector<short>(SENSOR_COUNT));
+    }
 
+    // Log all sensor values at once
+    bool log(const short sensorVals[])
+    {
         for (size_t i = 0; i < SENSOR_COUNT; ++i)
-            buffer[index].sensor[i] = sensorVals[i];
+            buffer[index][i] = sensorVals[i];
         index++;
         if (index >= MAX_ENTRIES)
         {
@@ -114,7 +109,7 @@ public:
             size_t idx = (start + i) % MAX_ENTRIES;
             for (size_t j = 0; j < SENSOR_COUNT; ++j)
             {
-                out.print(buffer[idx].sensor[j]);
+                out.print(buffer[idx][j]);
                 if (j < SENSOR_COUNT - 1) out.print("\t");
             }
             out.println();
@@ -126,6 +121,5 @@ public:
     {
         index = 0;
         wrapped = false;
-        lastLogTime = 0;
     }
 };
