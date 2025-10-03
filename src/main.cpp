@@ -7,7 +7,7 @@ asm(".global _printf_float");
 
 PIDLogger logger;
 int jccount;
-const int sensorCount = sizeof(s) / sizeof(Sensor);
+const int sensorCount = s.size();
 float input = sensorCount - 1, output, setpoint = sensorCount - 1, leftmotor, rightmotor;
 QuickPID pid = QuickPID(&input, &output, &setpoint, KP, KI, KD, QuickPID::Action::reverse);
 
@@ -19,7 +19,7 @@ short voltage()
 SensorStripLogger sensorLogger(sensorCount);
 
 float line() {
-    input = line(s, input);
+    input = line(s, input, FLIPPED, AMBIGUITY);
     return input;
 }
 
@@ -147,7 +147,8 @@ void setup() {
             {
                 Serial.printf("\nA\u001b[33m%d\u001b[0m\t%d\t%s", i, s[i].get(), s[i].on()?"ON":"\u001b[2mOFF\u001b[22m");
             }
-            delayMicroseconds(33333); // 30 FPS
+            // delayMicroseconds(33333); // 30 FPS
+            delay(200);
         }
     }
     beep();
