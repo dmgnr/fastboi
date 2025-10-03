@@ -1,4 +1,4 @@
-#include <MicroPOP32.h>
+#include <mp32.h>
 #include <stdlib.h>
 #include <vector>
 #include <numeric>
@@ -47,8 +47,11 @@ public:
     }
 };
 
+#ifndef LINE_FN
+#define LINE_FN
+
 // Weighted average
-float line(Sensor s[], float inp) {
+static float line(Sensor s[], float inp) {
     const int count = sizeof(s) / sizeof(Sensor);
     vector<int> active;
     for (int i = 0; i < count; i++) if(s[i].on())
@@ -62,3 +65,5 @@ float line(Sensor s[], float inp) {
     inp = accumulate(active.begin(), active.end(), 0.0) / active.size();
     return inp;
 }
+
+#endif

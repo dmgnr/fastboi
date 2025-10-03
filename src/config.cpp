@@ -15,7 +15,7 @@
 #define VOLT_BASELINE 762 // Voltage in integer
 
 // Sensors
-Sensor s[] = {
+static Sensor s[] = {
     Sensor(A0, (1666 + 409) / 2),
     Sensor(A1, (1687 + 418) / 2),
     Sensor(A2, (1465 + 371) / 2),
