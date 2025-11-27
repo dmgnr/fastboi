@@ -28,11 +28,6 @@ void Track() {
     float le = 0;
     long jctime = 0;
     short jc = 0;
-    // 1, 2 = start
-    // 3, 4 = lap 2
-    // 5, 6 = lap 3
-    // 7, 8 = lap 4
-    // 9    = stop
     while (jc < LAP_COUNT && !ok())
     {
         long next = micros() + 10000;
@@ -47,9 +42,10 @@ void Track() {
                     ? (sensorCount * 2 - 4) : 4;
             if(!jctime)
                 jctime = millis();
+            else if(PICK_STOP && millis() - jctime > JC_TIMEOUT) jc = LAP_COUNT; // Stop if picked up
             nextscale = 2; // robot go brrrr.
         }
-        else if (jctime && millis() - jctime > 200)
+        else if (jctime && millis() - jctime > JC_TIMEOUT)
         {
             jctime = 0;
             jc++;
