@@ -19,12 +19,12 @@ short voltage()
 SensorStripLogger sensorLogger(sensorCount);
 
 float line() {
-    input = line(s, input, FLIPPED, AMBIGUITY);
+    input = line(s, input, FLIPPED, AMBIGUITY, DEADZONE);
     return input;
 }
 
 void Track() {
-    float scale = 1;
+    float scale = 0.5;
     float le = 0;
     long jctime = 0;
     short jc = 0;
@@ -33,7 +33,7 @@ void Track() {
         long next = micros() + 10000;
         line();
         // Scale output based on change in error(Kd)
-        float nextscale = min(1.0, 1.2 - abs(le - input) / (float)(sensorCount * 2))
+        float nextscale = min(1.0, 1.2 - abs(le - input) / (float)(sensorCount))
                           / max((double)voltage() / VOLT_BASELINE, 0.1);
         // Straight on junction
         if(input > 100) {
@@ -54,16 +54,16 @@ void Track() {
             jctime = 0;
         pid.Compute();
         // Acceleration
-        if(nextscale > scale) scale+=0.01;
-        else if(nextscale < scale-0.05) scale -= 0.05;
+        if(nextscale > scale)
+            scale += ACCELERATION;
+        else if(nextscale < scale-0.2) // hit the fucking brakes
+            scale = min(scale - BRAKE_INTENSITY / 10.0, scale / (double)BRAKE_INTENSITY);
+        else if (nextscale < scale - 0.05)
+            scale -= 0.05;
         le = (le * 9 + input) / 10.0;
         // Use the PID output to control the motors
         leftmotor = min((SPEED + output) * scale, 100.0f);
         rightmotor = min((SPEED - output) * scale, 100.0f) * RIGHT_OFFSET;
-        // the reason I only slowdown motors for offset
-        // is that if it was running on max speed and I speed it up
-        // it would have no effect, nullifying the offset
-        // and causing the robot to go off course
 
         motor(leftmotor, rightmotor);
         logger.log(input, output, scale, leftmotor, rightmotor);
@@ -73,7 +73,7 @@ void Track() {
 
 void tune() {
     PIDAutotuner tuner = PIDAutotuner();
-    tuner.setTargetInputValue(sensorCount - 1);
+    tuner.setTargetInputValue((sensorCount * 2 - 1) / 2.0);
     tuner.setLoopInterval(1000);
     tuner.setOutputRange(-SPEED, SPEED);
     tuner.startTuningLoop(micros());
@@ -138,7 +138,7 @@ void setup() {
         {
             line();
             if(input != 101) pid.Compute();
-            Serial.printf("\u001bcPow: %.2fV\tLine: %d\nOut: %.2f\n\u001b[36mPin\tRaw\tStt\u001b[0m", voltage()/100.0, (int)input, output);
+            Serial.printf("\u001bcPow: %.2fV\tLine: %.1f\nOut: %.2f\n\u001b[36mPin\tRaw\tStt\u001b[0m", voltage()/100.0, input, output);
             for (int i = 0; i < sensorCount; i++)
             {
                 Serial.printf("\nA\u001b[33m%d\u001b[0m\t%d\t%s", i, s[i].get(), s[i].on()?"ON":"\u001b[2mOFF\u001b[22m");

@@ -51,18 +51,21 @@ public:
 #define LINE_FN
 
 // Weighted average
-static float line(vector<Sensor> s, float inp, bool flipped, int ambiguity) {
+static float line(vector<Sensor> s, float inp, bool flipped, int ambiguity, int deadzone) {
     const int count = s.size();
+    const float center = (count * 2 - 1) / 2.0;
     vector<int> active;
     for (int i = 0; i < count; i++) if(flipped - s.at(i).on())
-            active.push_back(max(i * 2 - 1, 0));
+            active.push_back(max(i * 2, 0));
     // If robot is on black line, return flag 1
-    if(active.size() == count)
+    if (active.size() == count)
         return 101;
     // If it's potentially ambiguous, don't do anything
     if(active.size() > ambiguity || active.size() == 0)
         return inp;
     inp = accumulate(active.begin(), active.end(), 0.0) / active.size();
+    if(abs(inp - center) <= deadzone)
+        inp = center;
     return inp;
 }
 
