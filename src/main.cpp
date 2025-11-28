@@ -4,13 +4,18 @@ asm(".global _printf_float");
 #include <QuickPID.h>
 #include <pidautotuner.h>
 #include <./config.cpp>
+#include <./filter.h>
+#include <./mechanics.cpp>
 
 PIDLogger logger;
 int jccount;
 const int sensorCount = s.size();
 float input = sensorCount - 1, output, setpoint = sensorCount - 1, leftmotor, rightmotor;
 QuickPID pid = QuickPID(&input, &output, &setpoint, KP, KI, KD, QuickPID::Action::reverse);
+PT1 filter(0.0015f);
+Compartment compartment;
 
+// Read battery voltage in centivolts
 short voltage()
 {
     return a(VOLTMETER_PIN) / 2.5;
@@ -33,7 +38,7 @@ void Track() {
         long next = micros() + 10000;
         line();
         // Scale output based on change in error(Kd)
-        float nextscale = min(1.0, 1.2 - abs(le - input) / (float)(sensorCount))
+        float nextscale = min(100.0 / SPEED, 1.2 - abs(le - input) / (float)(sensorCount))
                           / max((double)voltage() / VOLT_BASELINE, 0.1);
         // Straight on junction
         if(input > 100) {
@@ -52,12 +57,13 @@ void Track() {
         }
         else if (jctime)
             jctime = 0;
+        input = filter.filter(input);
         pid.Compute();
         // Acceleration
         if(nextscale > scale)
             scale += ACCELERATION;
-        else if(nextscale < scale-0.2) // hit the fucking brakes
-            scale = min(scale - BRAKE_INTENSITY / 10.0, scale / (double)BRAKE_INTENSITY);
+        else if(nextscale < scale-0.2 && scale > BRAKE_LIMIT) // hit the frickin brakes
+            scale = max(min(scale - BRAKE_INTENSITY / 10.0, scale / (double)BRAKE_INTENSITY), BRAKE_LIMIT);
         else if (nextscale < scale - 0.05)
             scale -= 0.05;
         le = (le * 9 + input) / 10.0;
@@ -148,7 +154,17 @@ void setup() {
         }
     }
     beep();
-    while(!ok());
+    while(!ok() && !sw_B());
+    if(sw_B()) while(1) {
+        beep(200); // long short beep
+        delay(100);
+        beep(100);
+        compartment.open();
+        delay(1000);
+        compartment.close();
+        while(sw_B());
+        while(!sw_B());
+    }
     beep();
     while (ok());
     delay(1000);

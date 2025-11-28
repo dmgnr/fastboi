@@ -5,7 +5,7 @@ using namespace std;
 
 class PIDLogger
 {
-    static const size_t MAX_ENTRIES = 1000;
+    static const size_t MAX_ENTRIES = 500;
     static const uint32_t RATE_LIMIT_MS = 20;
 
     struct Entry

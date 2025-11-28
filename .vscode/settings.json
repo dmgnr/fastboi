@@ -1,5 +1,6 @@
 {
   "files.associations": {
+    "flake.lock": "json",
     "array": "cpp",
     "atomic": "cpp",
     "bit": "cpp",
@@ -41,6 +42,7 @@
     "stdexcept": "cpp",
     "streambuf": "cpp",
     "cinttypes": "cpp",
-    "typeinfo": "cpp"
+    "typeinfo": "cpp",
+    "chrono": "cpp"
   },
 }
